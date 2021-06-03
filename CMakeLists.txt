@@ -53,7 +53,7 @@ endif()
 #--------------------------
 option(GetFFTW "GetFFTW" ON)
 if(GetFFTW)
-
+message(STATUS CMAKE_CURRENT_BINARY DIR: ${CMAKE_CURRENT_BINARY_DIR})
 # FFTW2 
 include(ExternalProject)
 ExternalProject_Add(project_fftw
