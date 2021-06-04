@@ -57,10 +57,13 @@ logical :: direct_field_calc, integrated_green_function
 
 !allocations for propagation
 real(dp), dimension(:,:), allocatable :: grid
+integer, dimension(:), allocatable :: locator
+
 real(dp), dimension(:,:), allocatable :: acceleration
 real(dp), dimension(:,:), allocatable :: VY_p_i1
 real(dp), dimension(:), allocatable :: VY_gamma_i1
-
+real(dp), dimension(:), allocatable :: E_h, B_h
+integer :: index_x, index_y, index_z, tmp
 
 namelist / opensc_test_params / &
     nx_gbl, ny_gbl, nz_gbl, maxrayp, e_tot, bunch_charge, &
@@ -261,52 +264,55 @@ N_tstep = 1000
 allocate(acceleration(3, 1:nraysp))
 allocate(VY_p_i1(3, 1:nraysp))
 allocate(VY_gamma_i1(1:nraysp))
-
-call init_vay(tstep, ex, ey, ez, hx, hy, hz, acceleration, VY_p_i1, VY_gamma_i1, ptcls, nraysp, chrgpermacro, maxrayp, &
-              xmin, ymin, zmin, dx, dy, dz, &
-              ilo, ihi, jlo, jhi, klo, khi, ilo_rho_gbl, jlo_rho_gbl, klo_rho_gbl)
-
-call destroy_propagation(acceleration, VY_p_i1, VY_gamma_i1)
+allocate(E_h(3))
+allocate(B_h(3))
+! call init_vay(tstep, ex, ey, ez, hx, hy, hz, acceleration, VY_p_i1, VY_gamma_i1, ptcls, nraysp, chrgpermacro, maxrayp, &
+!               xmin, ymin, zmin, dx, dy, dz, &
+!               ilo, ihi, jlo, jhi, klo, khi, ilo_rho_gbl, jlo_rho_gbl, klo_rho_gbl)
+call generate_grid(grid, ilo, ihi, jlo, jhi, klo, khi, ilo_rho_gbl, jlo_rho_gbl, klo_rho_gbl, xmin, ymin, zmin, dx, dy, dz)
+call getexternalfield(100, grid, locator, maxrayp, ptcls, ex, ey, ez, hx, hy, hz, ilo, ihi, jlo, jhi, klo, khi, E_h, B_h)
+call destroy_grid(grid)
+call destroy_propagation(acceleration, VY_p_i1, VY_gamma_i1, E_h, B_h)
 if(myrank.eq.0)write(6,*)'done with computation. writing results'
 !
 ! diagnostics:
 !     call prntall(0,n1,nraysp,nx,ny,nz,ptcls,hx,hy,hz,ex,ey,ez,tval,dx,dy,dz,xmin,ymin,zmin)
 ! As a simple diagnostic, write the potential along a line. Each proc write to a separate file. cat these together to plot.
 ! phi(i,jfixed,kfixed):
-! if(mprocs.gt.8192)stop !prevents writing a huge # of files
-! do k=lbound(phi,3),ubound(phi,3)
-!   do j=lbound(phi,2),ubound(phi,2)
-!     do i=lbound(phi,1),ubound(phi,1)
-!       if(j.ne.jlo_rho_gbl+(jhi_rho_gbl-jlo_rho_gbl+1)/2-1)cycle
-!       if(k.ne.klo_rho_gbl+(khi_rho_gbl-klo_rho_gbl+1)/2-1)cycle
-!       if(idirectfieldcalc.eq.0)then
-!         write(1000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,phi(i,j,k)
-!         !real(dp), dimension(3, size(grid,2)+1)
-!       endif
-!       if(idirectfieldcalc.eq.1)then
-!         write(1000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,ex(i,j,k)
-!       endif
-!     enddo
-!   enddo
-! enddo
+if(mprocs.gt.8192)stop !prevents writing a huge # of files
+do k=lbound(phi,3),ubound(phi,3)
+  do j=lbound(phi,2),ubound(phi,2)
+    do i=lbound(phi,1),ubound(phi,1)
+      if(j.ne.jlo_rho_gbl+(jhi_rho_gbl-jlo_rho_gbl+1)/2-1)cycle
+      if(k.ne.klo_rho_gbl+(khi_rho_gbl-klo_rho_gbl+1)/2-1)cycle
+      if(idirectfieldcalc.eq.0)then
+        write(1000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,phi(i,j,k)
+        !real(dp), dimension(3, size(grid,2)+1)
+      endif
+      if(idirectfieldcalc.eq.1)then
+        write(1000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,ex(i,j,k)
+      endif
+    enddo
+  enddo
+enddo
 
-!     !!!  flush(1000+myrank)
-! ! phi(ifixed,jfixed,k):
-! do k=lbound(phi,3),ubound(phi,3)
-!   do j=lbound(phi,2),ubound(phi,2)
-!     do i=lbound(phi,1),ubound(phi,1)
-!       if(i.ne.ilo_rho_gbl+(ihi_rho_gbl-ilo_rho_gbl+1)/2-1)cycle
-!       if(j.ne.jlo_rho_gbl+(jhi_rho_gbl-jlo_rho_gbl+1)/2-1)cycle
-!       if(idirectfieldcalc.eq.0)then
-!         write(6000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,phi(i,j,k)
-!       endif
-!       if(idirectfieldcalc.eq.1)then
-!         write(6000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,ez(i,j,k)
-!       endif
-!     enddo
-!   enddo
-! enddo
-   !!!   flush(6000+myrank)
+    !!!  flush(1000+myrank)
+! phi(ifixed,jfixed,k):
+do k=lbound(phi,3),ubound(phi,3)
+  do j=lbound(phi,2),ubound(phi,2)
+    do i=lbound(phi,1),ubound(phi,1)
+      if(i.ne.ilo_rho_gbl+(ihi_rho_gbl-ilo_rho_gbl+1)/2-1)cycle
+      if(j.ne.jlo_rho_gbl+(jhi_rho_gbl-jlo_rho_gbl+1)/2-1)cycle
+      if(idirectfieldcalc.eq.0)then
+        write(6000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,phi(i,j,k)
+      endif
+      if(idirectfieldcalc.eq.1)then
+        write(6000+myrank,'(5(1pe14.7,1x))')xmin+(i-ilo_rho_gbl)*dx,ymin+(j-jlo_rho_gbl)*dy,zmin+(k-klo_rho_gbl)*dz,ez(i,j,k)
+      endif
+    enddo
+  enddo
+enddo
+   !!   flush(6000+myrank)
 !
 ! if(myrank.eq.0) then
 !   call cpu_time(stime)
