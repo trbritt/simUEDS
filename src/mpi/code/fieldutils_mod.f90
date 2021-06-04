@@ -98,28 +98,25 @@ module fieldutils_mod
     !------------------------------------------------------------------------
     !------------------------------------------------------------------------
     !+
-    subroutine getexternalfield(n, grid, maxrayp, ptcls, ex, ey, ez, hx, hy, hz, ilo, ihi,jlo, jhi,klo, khi, &
+    subroutine getexternalfield(n, grid, locator, maxrayp, ptcls, ex, ey, ez, hx, hy, hz, ilo, ihi,jlo, jhi,klo, khi, &
                                 E_h, B_h)
       integer, intent(in) :: ilo, ihi,jlo, jhi,klo, khi, maxrayp
       real(dp), dimension(ilo:ihi,jlo:jhi,klo:khi) :: hx,hy,hz,ex,ey,ez
-      real(dp), dimension(1:3), intent(out) :: E_h, B_h
+      real(dp), dimension(:), allocatable :: E_h, B_h
       integer :: n,m
       real(dp), dimension(7, maxrayp) :: ptcls
 
       real(dp), allocatable :: data(:,:)
       type(kdtree2_result), allocatable :: results(:)
       real(dp), dimension(:,:), allocatable :: grid
+      integer, dimension(:), allocatable, intent(in) :: locator
+
 
       type(kdtree2), pointer :: tree
       integer, dimension(3,4) :: indices
-      integer, dimension(1:size(grid, 2)) :: locator
       integer :: tmp, i
       integer :: index_x, index_y, index_z
 
-      locator = (/(i, i=klo,khi-1)/)*ihi*jhi + (/(i, i=jlo,jhi)/)*ihi + (/(i, i=ilo,ihi)/) - ((ihi-ilo) * (jhi-jlo) * (khi-klo))
-      
-      
-      
       allocate(results(4))
       grid(1, size(grid,2)) = ptcls(1, n)
       grid(2, size(grid,2)) = ptcls(3, n)
@@ -130,15 +127,20 @@ module fieldutils_mod
       write(*,*) "Nearest neighbors found at indices: ", results(:)%idx
 
       do m=1,4
-        tmp = locator(results(m)%idx)
+        tmp = results(m)%idx
         index_z = tmp / (ihi*jhi)
         tmp = tmp - index_z*ihi*jhi
         index_y = tmp / ihi
         index_x = mod(tmp, ihi)
-        indices(1, m) = index_x
-        indices(2, m) = index_y
-        indices(3, m) = index_z
+        ! this scheme returns indexes running from 0 to <i,j,k>hi-<i,j,k>lo, so add lower bound
+        indices(1, m) = index_x + ilo
+        indices(2, m) = index_y + jlo
+        indices(3, m) = index_z + klo
       enddo
+      ! write(*,*) "ilo = ", ilo, "ihi = ", ihi
+      ! write(*,*) "jlo = ", jlo, "jhi = ", jhi
+      ! write(*,*) "klo = ", klo, "khi = ", khi
+      ! write(6,*) indices
       !compute average of 4 neighbors
       do m=1,4
         E_h(1) = E_h(1) + ex(indices(1,m), indices(2, m), indices(3,m))
@@ -152,7 +154,8 @@ module fieldutils_mod
       call kdtree2_destroy(tree)
       E_h(:) = E_h(:) / 4
       B_h(:) = B_h(:) / 4
-
+      ! write(6,*) E_h
+      ! write(6,*) B_h
     end subroutine
     !------------------------------------------------------------------------
     !------------------------------------------------------------------------
@@ -163,7 +166,7 @@ module fieldutils_mod
                             xmin, ymin, zmin, dx, dy, dz)
       real(dp), intent(in) :: xmin, ymin, zmin, dx, dy, dz
       integer, intent(in) :: ilo, ihi,jlo, jhi,klo, khi, ilo_rho_gbl, jlo_rho_gbl, klo_rho_gbl
-      real(dp), dimension(:,:), allocatable, intent(out) :: grid
+      real(dp), dimension(:,:), allocatable :: grid
       integer :: num_points
       integer :: kk,j, i, accumulator=1
       num_points = (ihi-ilo) * (jhi-jlo) * (khi-klo)
@@ -193,6 +196,32 @@ module fieldutils_mod
     subroutine destroy_grid(grid)
       real(dp), dimension(:,:), allocatable:: grid
       deallocate(grid)
+    end subroutine
+    !------------------------------------------------------------------------
+    !------------------------------------------------------------------------
+    !------------------------------------------------------------------------
+    !+
+    subroutine destroy_locator(locator)
+      integer, dimension(:), allocatable:: locator
+      deallocate(locator)
+    end subroutine
+    !------------------------------------------------------------------------
+    !------------------------------------------------------------------------
+    !------------------------------------------------------------------------
+    !+
+    subroutine generate_locator(locator, ilo, ihi,jlo, jhi,klo, khi)
+      integer, intent(in) :: ilo, ihi,jlo, jhi,klo, khi
+      integer, dimension(:), allocatable :: locator
+      integer :: accumulator = 1, kk, j, i
+      allocate(locator((ihi-ilo) * (jhi-jlo) * (khi-klo)))
+      do kk=klo,khi-1
+        do j=jlo, jhi-1
+          do i=ilo, ihi-1
+            locator(accumulator) = ((kk)*ihi*jhi) + ((j)*ihi) + (i)
+            accumulator = accumulator + 1
+          enddo
+        enddo
+      enddo
     end subroutine
 
 end module
